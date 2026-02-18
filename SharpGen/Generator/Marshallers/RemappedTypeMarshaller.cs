@@ -9,7 +9,7 @@ namespace SharpGen.Generator.Marshallers;
 
 internal sealed class RemappedTypeMarshaller : MarshallerBase, IMarshaller
 {
-    public bool CanMarshal(CsMarshalBase csElement) => csElement.MappedToDifferentPublicType;
+    public bool CanMarshal(CsMarshalBase csElement) => csElement.MappedToDifferentPublicType && !csElement.IsArray;
 
     public ArgumentSyntax GenerateManagedArgument(CsParameter csElement) =>
         GenerateManagedValueTypeArgument(csElement);

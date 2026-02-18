@@ -9,8 +9,7 @@ namespace SharpGen.Generator.Marshallers;
 
 internal sealed partial class ValueTypeArrayMarshaller : MarshallerBase, IMarshaller
 {
-    public bool CanMarshal(CsMarshalBase csElement) => csElement.IsValueType && csElement.IsArray &&
-                                                       !csElement.MappedToDifferentPublicType;
+    public bool CanMarshal(CsMarshalBase csElement) => csElement.IsValueType && csElement.IsArray;
 
     public ArgumentSyntax GenerateManagedArgument(CsParameter csElement) =>
         Argument(IdentifierName(csElement.Name));
@@ -33,7 +32,8 @@ internal sealed partial class ValueTypeArrayMarshaller : MarshallerBase, IMarsha
                             AssignmentExpression(SyntaxKind.SimpleAssignmentExpression,
                                 MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(MarshalParameterRefName), IdentifierName(csElement.Name)),
                                 ParseExpression($"({csElement.PublicType.QualifiedName}*)System.Runtime.InteropServices.NativeMemory.Alloc((nuint) (System.Runtime.CompilerServices.Unsafe.SizeOf<{csElement.PublicType.QualifiedName}>() * {csElement.Name}.Length))"))), 
-                         GenerateCopyMemory(csElement, ArrayCopyDirection.ManagedToNative)
+                          GenerateCopyMemory(csElement, ArrayCopyDirection.ManagedToNative, takeAddress: false),
+                          ExpressionStatement(AssignmentExpression(SyntaxKind.SimpleAssignmentExpression, MemberAccessExpression(SyntaxKind.SimpleMemberAccessExpression, IdentifierName(MarshalParameterRefName), IdentifierName(csElement.ArraySpecification?.SizeIdentifier)), ParseExpression($"({csElement.ArraySpecification?.TypeSizeIdentifier}){csElement.Name}.Length")))
                      )
                  ),
             _ => null
@@ -69,7 +69,7 @@ internal sealed partial class ValueTypeArrayMarshaller : MarshallerBase, IMarsha
                             AssignmentExpression(SyntaxKind.SimpleAssignmentExpression,
                                 IdentifierName(csElement.Name),
                                 ParseExpression($"new {csElement.PublicType.QualifiedName}[@ref.{csElement.ArraySpecification?.SizeIdentifier}]"))),
-                        GenerateCopyMemory(csElement, ArrayCopyDirection.NativeToManaged)
+                        GenerateCopyMemory(csElement, ArrayCopyDirection.NativeToManaged, takeAddress: false)
                     )
                 ),
             _ => null

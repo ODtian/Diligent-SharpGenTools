@@ -24,54 +24,36 @@ internal sealed partial class ValueTypeArrayMarshaller
         _ => throw new ArgumentOutOfRangeException(nameof(direction))
     };
 
-    private StatementSyntax GenerateCopyMemory(CsMarshalBase marshallable, ArrayCopyDirection direction)
+    private StatementSyntax GenerateCopyMemory(CsMarshalBase marshallable, ArrayCopyDirection direction, bool takeAddress = true)
     {
-        static VariableDeclaratorSyntax FixedDeclaration(SyntaxToken name, ExpressionSyntax source) =>
-            VariableDeclarator(
-                name,
-                default,
-                EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, source))
-            );
-
-        // managed is  __to  when NativeToManaged, __from when ManagedToNative
-        //  native is __from when NativeToManaged,  __to  when ManagedToNative
         var (managed, native) = CopyDirectionToIdentifiers(
             direction, Identifier(ToIdentifier), Identifier(FromIdentifier)
         );
 
-        ExpressionSyntax argumentExpression = marshallable.ArraySpecification?.Type == ArraySpecificationType.Constant ?
+        var argumentExpression = marshallable.ArraySpecification?.Type == ArraySpecificationType.Constant ?
                     LiteralExpression(
                         SyntaxKind.NumericLiteralExpression,
                         Literal((uint) marshallable.ArrayDimensionValue)
                     ) :
                     GeneratorHelpers.CastExpression(TypeUInt32, GeneratorHelpers.LengthExpression(IdentifierName(marshallable.Name)));
 
-        return FixedStatement(
-            VariableDeclaration(
-                VoidPtrType,
-                SeparatedList(
-                    new[]
-                    {
-                        FixedDeclaration(
-                            managed,
-                            ElementAccessExpression(
-                                IdentifierName(marshallable.Name),
-                                BracketedArgumentList(SingletonSeparatedList(Argument(ZeroLiteral)))
-                            )
-                        ),
-                        FixedDeclaration(native, GetMarshalStorageLocation(marshallable))
-                    }
-                )
-            ),
-            GenerateCopyMemoryInvocation(
-                BinaryExpression(
-                    SyntaxKind.MultiplyExpression,
-                    argumentExpression,
-                    SizeOf(marshallable.MarshalType)
-                ),
-                castTo: false, castFrom: false
-            )
-        );
+        var copyInvocation = GenerateCopyMemoryInvocation(
+            BinaryExpression(SyntaxKind.MultiplyExpression, argumentExpression, SizeOf(marshallable.MarshalType)),
+            castTo: false, castFrom: false);
+
+        var managedDecl = VariableDeclarator(managed, default, EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression,
+            ElementAccessExpression(IdentifierName(marshallable.Name), BracketedArgumentList(SingletonSeparatedList(Argument(ZeroLiteral)))))));
+
+        if (takeAddress)
+        {
+            var nativeDecl = VariableDeclarator(native, default, EqualsValueClause(PrefixUnaryExpression(SyntaxKind.AddressOfExpression, GetMarshalStorageLocation(marshallable))));
+            return FixedStatement(VariableDeclaration(VoidPtrType, SeparatedList(new[] { managedDecl, nativeDecl })), copyInvocation);
+        }
+
+        var nativeLocal = LocalDeclarationStatement(VariableDeclaration(VoidPtrType, SingletonSeparatedList(
+            VariableDeclarator(native, default, EqualsValueClause(GetMarshalStorageLocation(marshallable))))));
+
+        return FixedStatement(VariableDeclaration(VoidPtrType, SingletonSeparatedList(managedDecl)), Block(nativeLocal, copyInvocation));
     }
 
     private StatementSyntax GenerateCopyBlock(CsMarshalCallableBase parameter, ArrayCopyDirection direction)
